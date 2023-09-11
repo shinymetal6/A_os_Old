@@ -12,7 +12,7 @@
 extern	void defrag_mem(void);
 extern	void __attribute__ ((noinline)) suspend(void);
 
-USRprcs_t	USRprcs[USR_PROCESS] =
+SYSTEM_RAM	USRprcs_t	USRprcs[USR_PROCESS] =
 {
 	{
 			.user_process = process1_handler,
@@ -39,7 +39,9 @@ void supervisor_process(void)
 		if ( Asys.failed_process != 0 )
 		{
 			find_orphaned_chunks(Asys.failed_process);
-			Asys.failed_process = 0;
+			Asys.last_failed_process = Asys.failed_process;
+			Asys.last_fail_rsn = Asys.fail_rsn ;
+			Asys.failed_process = Asys.fail_rsn = 0;
 		}
 		defrag_mem();
 		HAL_Delay(100);

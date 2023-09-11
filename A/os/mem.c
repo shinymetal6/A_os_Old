@@ -12,6 +12,8 @@
 
 extern	SYSTEM_RAM	MEMpool_t	MEMpool[POOL_NUM];
 extern	Asys_t		Asys;
+extern	void __attribute__ ((noinline)) suspend(void);
+extern	uint32_t __attribute__ ((noinline)) wait_event(uint32_t events);
 
 void mem_init(void)
 {
@@ -30,7 +32,7 @@ MEMpool_t	*p = MEMpool;
 		p[i].chunk_count = 0;
 		p[i].chunk_index = 0;
 		p[i].process = p[i].flags = 0;
-		mem_ptr += POOL_SIZE;
+		mem_ptr += POOL_BUFSIZE;
 	}
 	p[i-1].nxt_link = 0;
 }
@@ -73,7 +75,7 @@ MEMpool_t	*p = MEMpool;
 		{
 			p[i].nxt_link = (uint8_t *)&p[i+1];
 			p[i].pre_link = (i > 0) ? (uint8_t *)&p[i-1] : 0;
-			mem_ptr += POOL_SIZE;
+			mem_ptr += POOL_BUFSIZE;
 		}
 		p[i-1].nxt_link = 0;
 		Asys.system_flags &= ~SYS_MEM_DEFRAG_REQUEST;
@@ -84,10 +86,13 @@ MEMpool_t	*p = MEMpool;
 	__enable_irq();
 }
 
-uint32_t	f_error = 0;
-void find_error(void)
+void memory_exhausted(void)
 {
-	f_error++;
+	process[Asys.current_process].current_state = PROCESS_WAITING_STATE;
+	process[Asys.current_process].current_state |= (PROCESS_INACTIVE_STATE | PROCESS_MEMORY_EXHAUSTED);
+	Asys.failed_process = Asys.current_process;
+	Asys.fail_rsn = PROCESS_MEMORY_EXHAUSTED;
+	wait_event(0);	// memory exhausted, kill the process
 }
 
 uint16_t find_chunk_by_size(uint16_t size)
@@ -95,8 +100,8 @@ uint16_t find_chunk_by_size(uint16_t size)
 MEMpool_t	*p = (MEMpool_t *)Asys.first_mem;
 uint16_t	num_buf,i;
 
-	num_buf = size / POOL_SIZE;
-	if ( size > (num_buf*POOL_SIZE))
+	num_buf = size / POOL_BUFSIZE;
+	if ( size > (num_buf*POOL_BUFSIZE))
 		num_buf += 1;
 	Asys.first_of_list = Asys.last_of_list = p;
 	i = num_buf;
@@ -113,12 +118,11 @@ uint16_t	num_buf,i;
 	}
 	Asys.last_of_list--;
 
-	if (( Asys.first_of_list < (MEMpool_t 	*)SRAM_START ) ||(Asys.last_of_list > (MEMpool_t 	*)SRAM_END) )
-		find_error();
+	if (( Asys.first_of_list < (MEMpool_t 	*)POOL_START ) ||(Asys.last_of_list > (MEMpool_t 	*)POOL_END) )
+		memory_exhausted();
 
 	return num_buf;
 }
-
 
 // warning : max 256 buffers of 256 byte
 uint8_t *mem_get(uint32_t size )
@@ -129,41 +133,52 @@ uint16_t	number_of_chunks,i;
 	__disable_irq();
 	// 1 . find a suitable chunk in memory
 	number_of_chunks = find_chunk_by_size(size);
-	// 2. if is the first in buffer pool update Asys.first_mem
-	if ( Asys.first_of_list->pre_link == 0 )
+	if ( number_of_chunks )
 	{
-		Asys.first_mem = Asys.last_of_list->nxt_link;
-		//2.1 clear pre_link of the first buffer
-		p = (MEMpool_t *)Asys.last_of_list->nxt_link;
-		p->pre_link = 0;
-		//2.2 clear nxt_link of the last buffer
-		Asys.last_of_list->nxt_link = 0;
+		// 2. if is the first in buffer pool update Asys.first_mem
+		if ( Asys.first_of_list->pre_link == 0 )
+		{
+			Asys.first_mem = Asys.last_of_list->nxt_link;
+			//2.1 clear pre_link of the first buffer
+			p = (MEMpool_t *)Asys.last_of_list->nxt_link;
+			if ( p == 0 )
+			{
+				memory_exhausted();
+				return 0;
+			}
+			p->pre_link = 0;
+			//2.2 clear nxt_link of the last buffer
+			Asys.last_of_list->nxt_link = 0;
+		}
+		else
+		{
+			//3. we are inside the free list and not pointed by Asys.first_mem:
+			//		update the pre-link pointed buffer to the next_link of the last buffer
+			//3.1 point to prevoius buffer in list
+			p = (MEMpool_t *)Asys.first_of_list->pre_link;
+			//3.2 update nxt_link to the nxt_link of the last buffer in the chunk
+			p->nxt_link = (uint8_t *)Asys.last_of_list;
+			//3.3 clear the pre_link of the first buffer in chunk
+			Asys.first_of_list->pre_link = 0;
+		}
+		//4. now we have the chunk isolated from the list, pointed by first_of_list
+		working_ptr = Asys.first_of_list;
+		for(i=0;i<number_of_chunks;i++)
+		{
+			working_ptr->chunk_index = i;
+			working_ptr->chunk_count = number_of_chunks;
+			working_ptr->process = Asys.current_process;
+			working_ptr->flags = MEM_IN_USE;
+			working_ptr++;
+			Asys.num_buf_in_use++;
+		}
+		if ( Asys.num_buf_in_use > Asys.max_num_buf_in_use)
+			Asys.max_num_buf_in_use = Asys.num_buf_in_use;
+		Asys.system_flags |= SYS_MEM_DEFRAG_REQUEST;
+		__enable_irq();
+		return Asys.first_of_list->mem_ptr;
 	}
-	else
-	{
-		//3. we are inside the free list and not pointed by Asys.first_mem:
-		//		update the pre-link pointed buffer to the next_link of the last buffer
-		//3.1 point to prevoius buffer in list
-		p = (MEMpool_t *)Asys.first_of_list->pre_link;
-		//3.2 update nxt_link to the nxt_link of the last buffer in the chunk
-		p->nxt_link = (uint8_t *)Asys.last_of_list;
-		//3.3 clear the pre_link of the first buffer in chunk
-		Asys.first_of_list->pre_link = 0;
-	}
-	//4. now we have the chunk isolated from the list, pointed by first_of_list
-	working_ptr = Asys.first_of_list;
-	for(i=0;i<number_of_chunks;i++)
-	{
-		working_ptr->chunk_index = i;
-		working_ptr->chunk_count = number_of_chunks;
-		working_ptr->process = Asys.current_process;
-		working_ptr->flags = MEM_IN_USE;
-		working_ptr++;
-		Asys.num_buf_in_use++;
-	}
-	Asys.system_flags |= SYS_MEM_DEFRAG_REQUEST;
-	__enable_irq();
-	return Asys.first_of_list->mem_ptr;
+	return 0;
 }
 
 uint32_t	mem_addr_val;
@@ -174,7 +189,7 @@ MEMpool_t	*p,*first_list_pool,*insert_pool;
 uint8_t		chunk_count,i;
 
 	__disable_irq();
-	mem_addr_val = ((uint32_t ) data_ptr - Asys.first_data_address) / POOL_SIZE;
+	mem_addr_val = ((uint32_t ) data_ptr - Asys.first_data_address) / POOL_BUFSIZE;
 	p = (MEMpool_t *)&MEMpool[mem_addr_val];
 
 	// 1. check if single buffer or linked list buffers

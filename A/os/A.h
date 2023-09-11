@@ -8,6 +8,8 @@
 #ifndef OS_A_H_
 #define OS_A_H_
 
+
+
 #define MAX_PROCESS				5
 #define USR_PROCESS				(MAX_PROCESS-1)
 #define MAX_TIMERS				8
@@ -72,6 +74,7 @@ typedef struct
 	uint16_t	stack_size;
 }USRprcs_t;
 
+extern	void apply_quirks(void);
 
 extern	void supervisor_process1(void);
 extern	void supervisor_process2(void);

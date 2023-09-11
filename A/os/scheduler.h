@@ -15,6 +15,7 @@
 
 #define PROCESS_WAITING_STATE  		0x00
 #define PROCESS_READY_STATE 	 	0x01
+#define PROCESS_MEMORY_EXHAUSTED	0x20
 #define PROCESS_HARDFAULT_STATE		0x40
 #define PROCESS_INACTIVE_STATE 		0x80
 
@@ -51,12 +52,15 @@ typedef struct
 	uint32_t	g_os_started;
 	uint8_t		*first_mem;
 	uint32_t	num_buf_in_use;
+	uint32_t	max_num_buf_in_use;
 	uint32_t	first_data_address;
 	MEMpool_t 	*first_of_list;
 	MEMpool_t 	*last_of_list;
 	uint32_t	system_flags;
 	uint8_t		failed_process;
 	uint8_t		fail_rsn;
+	uint8_t		last_failed_process;
+	uint8_t		last_fail_rsn;
 }Asys_t;
 
 /* system_flags */
@@ -72,15 +76,7 @@ extern	void scan_processes(void);
 extern	void __attribute__ ((noinline)) do_pendV(void);
 extern void find_orphaned_chunks(uint8_t process);
 
-/*
-extern	PCB_t process[MAX_PROCESS];
-extern	void mem_init(void);
 
-extern	void init_systick_timer(uint32_t tick_hz);
-extern	void defrag_mem(void);
-extern	void A_Debug_Set_One(void);
-extern	void A_Debug_Set_Zero(void);
-*/
 extern SYSTEM_RAM	PCB_t 		process[MAX_PROCESS];
 extern SYSTEM_RAM	HWMngr_t	HWMngr[PERIPHERAL_NUM];
 extern SYSTEM_RAM	Asys_t		Asys;

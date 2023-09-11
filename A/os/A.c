@@ -16,6 +16,7 @@ SYSTEM_RAM	PCB_t 		process[MAX_PROCESS];
 SYSTEM_RAM	HWMngr_t	HWMngr[PERIPHERAL_NUM];
 SYSTEM_RAM	Asys_t		Asys;
 SYSTEM_RAM	MEMpool_t	MEMpool[POOL_NUM];
+SYSTEM_RAM	uint32_t	UsbDeviceId0=0xdeadbeef,UsbDeviceId1=0xbeefdead;
 
 extern	USRprcs_t	USRprcs[USR_PROCESS];
 extern	USRprcs_t	UserProcesses[USR_PROCESS];
@@ -81,17 +82,12 @@ static void A_init_memory(void)
 	bzero(process,sizeof(process));
 	bzero((uint8_t *)(SCHED_STACK_START-SIZE_TASK_STACK),SIZE_TASK_STACK*MAX_PROCESS);
 }
-/*
-void inline A_Debug_Set_One(void)
+
+void A_ClearMemory(void)
 {
-	  HAL_GPIO_WritePin(PG6_Debug_GPIO_Port, PG6_Debug_Pin, GPIO_PIN_SET);
+	A_init_memory();
 }
 
-void inline A_Debug_Set_Zero(void)
-{
-	  HAL_GPIO_WritePin(PG6_Debug_GPIO_Port, PG6_Debug_Pin, GPIO_PIN_RESET);
-}
-*/
 static __attribute__((naked)) void A_init_wait_event_stack(uint32_t sched_top_of_stack)
 {
      __set_MSP(sched_top_of_stack);
@@ -115,11 +111,12 @@ __attribute__((naked)) void A_switch_sp_to_psp(void)
 
 void A_start(void)
 {
-	__disable_irq();
+	MX_USB_Device_Init();
 
+	__disable_irq();
+	apply_quirks();
 	HAL_NVIC_SetPriority(PendSV_IRQn,  PendSV_PRIORITY, 0);		/* Make PendSV_IRQn lower priority */
 	HAL_NVIC_SetPriority(SysTick_IRQn, SysTick_PRIORITY, 0);	/* Make PendSV_IRQn lower priority */
-
 	A_init_memory();
 	mem_init();
 	A_init_wait_event_stack(SCHED_STACK_START);
