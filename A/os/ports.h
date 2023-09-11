@@ -58,9 +58,10 @@
 #ifdef	STM32H563xx
 /*
 	Include paths:
-	../../A_os/Libraries/STM32H5/STM32_USB_Device_Library/Class/CDC
-	../../A_os/Drivers/STM32H5/Usb_Device/Target
-	../../A_os/Libraries/STM32H5/STM32_USB_Device_Library/Core
+	USB :
+	../../A_os/Libraries/STM32H5/STM32_USB_Device_Library/Class/CDC/Inc
+	../../A_os/Drivers/STM32H5/USB_Device/Target
+	../../A_os/Libraries/STM32H5/STM32_USB_Device_Library/Core/Inc
 */
 /*
  * for h5 we use only SRAM4, leaving the conventional ram for user
